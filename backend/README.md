@@ -1,6 +1,6 @@
 # ERP Backend Service
 
-Comprehensive Node.js, Express, and PostgreSQL backend foundation built with TypeScript strict mode, Zod environment validation, Pino structured logging, Vitest test suite, explicit database schema migration foundation, and type-safe repository data access layer.
+Comprehensive Node.js, Express, and PostgreSQL backend service built with TypeScript strict mode, Zod environment validation, Pino structured logging, Vitest test suite, explicit database schema migration foundation, type-safe repository data access layer, production-grade REST API architecture, JWT authentication layer, robust transaction management, durable Audit Logging subsystem, exact Decimal & Financial Precision layer, generic Repository Architecture, UserRepository, Partner Repositories, Product Repository, BOM Repository, Sales Order Repository, Purchase Order Repository, Manufacturing Repository, Stock Ledger Repository, Audit Log Repository, Product Service, Partner Service, Inventory Core Engine (`InventoryService`), Stock Reservation Engine (`StockReservationService`), Stock Adjustment Engine (`StockAdjustmentService`), Inventory Concurrency Control subsystem, Sales Order Service (`SalesOrderService`), and Sales Order State Machine (`SalesOrderStateMachineService`).
 
 ## Prerequisites
 
@@ -8,57 +8,138 @@ Comprehensive Node.js, Express, and PostgreSQL backend foundation built with Typ
 - **npm**: v9+
 - **PostgreSQL**: v14+ (running database instance required for PostgreSQL connection)
 
-## Data Access Architecture
+## Sales Order State Machine (`src/services/salesOrderStateMachine.service.ts`)
+
+`SalesOrderStateMachineService` governs all valid Sales Order lifecycle transitions:
+
+- **Supported Lifecycle States**:
+  - `draft` -> `confirmed` | `cancelled`
+  - `confirmed` -> `processing` | `cancelled`
+  - `processing` -> `shipped` | `cancelled`
+  - `shipped` -> `completed`
+  - `completed` (Terminal State)
+  - `cancelled` (Terminal State)
+- **Business Rules**:
+  - `draft` -> `confirmed`: Customer must exist in org, order must contain >= 1 line item (`SalesOrderMissingItemsError`), items must have `quantity > 0` and `unit_price >= 0`.
+  - Cancellation allowed from `draft`, `confirmed`, `processing`.
+  - Direct status bypass via `SalesOrderService.updateSalesOrder` is prevented (`ValidationError`).
+- **Concurrency & Transaction Policy**: Uses `SELECT ... FOR UPDATE` row locks (`salesOrderRepository.lockByIdForUpdate`) inside `withTransaction` with Category A audit logging (`SALES_ORDER_STATUS_TRANSITION`).
+
+---
+
+## Sales Order Service (`src/services/salesOrder.service.ts`)
+
+`SalesOrderService` provides a production-grade business layer for Sales Orders and Sales Order Items.
+
+---
+
+## Inventory Concurrency Control (`src/repositories/inventory.repository.ts`, `src/services/*`)
+
+`Phase 024` hardens all inventory, reservation, adjustment, and ledger engines against concurrent execution race conditions.
+
+---
+
+## Stock Adjustment Engine (`src/services/stockAdjustment.service.ts`)
+
+`StockAdjustmentService` provides a production-grade Stock Adjustment Engine.
+
+---
+
+## Stock Reservation Engine (`src/services/stockReservation.service.ts`)
+
+`StockReservationService` provides a production-grade, multi-tenant Stock Reservation Engine.
+
+---
+
+## Inventory Core Engine (`src/services/inventory.service.ts`)
+
+`InventoryService` provides a centralized business layer for inventory quantity operations (`increaseStock`, `decreaseStock`, `adjustStock`).
+
+---
+
+## Partner Service (`src/services/partner.service.ts`)
+
+`PartnerService` provides unified business workflows for both Customers and Suppliers.
+
+---
+
+## Product Service (`src/services/product.service.ts`)
+
+`ProductService` provides transactional business workflows for managing products.
+
+---
+
+## Stock Reservation Repository (`src/repositories/stockReservation.repository.ts`)
+
+`StockReservationRepository` extends `BaseRepository<StockReservation, CreateStockReservationInput, UpdateStockReservationInput, StockReservationFilterParams>`.
+
+---
+
+## Stock Ledger Repository (`src/repositories/stockLedger.repository.ts`)
+
+`StockLedgerRepository` extends `BaseRepository<StockLedgerEntry, CreateStockLedgerInput, never, StockLedgerFilterParams>`.
+
+---
+
+## Manufacturing Repository (`src/repositories/manufacturing.repository.ts`)
+
+`ManufacturingRepository` extends `BaseRepository<ManufacturingOrder, CreateManufacturingOrderInput, UpdateManufacturingOrderInput, ManufacturingOrderFilterParams>`.
+
+---
+
+## Purchase Order Repository (`src/repositories/purchaseOrder.repository.ts`)
+
+`PurchaseOrderRepository` extends `BaseRepository<PurchaseOrder, CreatePurchaseOrderInput, UpdatePurchaseOrderInput, PurchaseOrderFilterParams>`.
+
+---
+
+## Sales Order Repository (`src/repositories/salesOrder.repository.ts`)
+
+`SalesOrderRepository` extends `BaseRepository<SalesOrder, CreateSalesOrderInput, UpdateSalesOrderInput, SalesOrderFilterParams>`.
+
+---
+
+## BOM Repository (`src/repositories/bom.repository.ts`)
+
+`BomRepository` extends `BaseRepository<Bom, CreateBomInput, UpdateBomInput, BomFilterParams>`.
+
+---
+
+## Product Repository (`src/repositories/product.repository.ts`)
+
+`ProductRepository` extends `BaseRepository<Product, CreateProductInput, UpdateProductInput, ProductFilterParams>`.
+
+---
+
+## User Repository (`src/repositories/user.repository.ts`)
+
+`UserRepository` extends `BaseRepository<User, CreateUserInput, UpdateUserInput, UserFilterParams>`.
+
+---
+
+## Repository Architecture
 
 ```text
-Controller
+Controller Layer (HTTP / Express / Status Codes)
     ↓
-Service
+Service Layer / Core Engine (Business Workflow / Validation)
     ↓
-Repository Layer (Organization, User, Role, Dept, Employee, Product, Warehouse, Inventory, Customer, Supplier)
+withTransaction(callback, options) ── (Optional PoolClient)
     ↓
-Query / Transaction Layer (query.ts, transaction.ts, errors.ts)
+Repository Layer (BaseRepository<T, CreateInput, UpdateInput, Filter>)
+    ├── Parameterized SQL ($1, $2, ...)
+    ├── Organization Scoping (WHERE organization_id = $1)
+    ├── Sort Column Allowlist (sanitizeSortColumn)
+    └── Decimal Primitive Preservation ("123456789.1234")
     ↓
-pg.Pool
+PostgreSQL Query Layer (query.ts / pg Pool)
     ↓
 PostgreSQL Database
 ```
 
-### Core Repository Principles
-
-1. **Explicit Organization Scoping**: Multi-tenant data access routines accept `organizationId` to enforce strict organization boundary isolation.
-2. **Parameterized Queries**: All queries pass parameters through explicit SQL arrays (`$1, $2, ...`), preventing SQL injection.
-3. **Strict Sort Whitelisting**: Sorting fields in `buildPaginationClause` validate input against an explicit array of allowed column names.
-4. **Transaction Abstraction**: `withTransaction(async (client) => { ... })` ensures atomic operations with automatic `BEGIN`, `COMMIT`, `ROLLBACK`, and safe client release.
-5. **Normalized Error Handling**: Intercepts PostgreSQL constraint codes (`23505`, `23503`, `23514`, `23502`) and translates them into application domain errors (`DuplicateKeyError`, `ForeignKeyViolationError`, etc.).
-
 ---
 
-## Repositories & Operations Overview
-
-| Repository | Scope / Key Operations |
-| --- | --- |
-| `OrganizationRepository` | `create`, `findById`, `findByCode`, `list`, `update`, `delete` |
-| `UserRepository` | `create`, `findById`, `findByEmail`, `listByOrganization`, `update`, `delete` |
-| `RoleRepository` | `create`, `findById`, `findByCode`, `listByOrganization`, `update`, `delete`, `assignRoleToUser`, `removeRoleFromUser`, `listUserRoles` |
-| `DepartmentRepository` | `create`, `findById`, `findByCode`, `listByOrganization`, `update`, `delete` |
-| `EmployeeRepository` | `create`, `findById`, `findByEmployeeCode`, `listByOrganization`, `listByDepartment`, `update`, `delete` |
-| `ProductRepository` | `create`, `findById`, `findBySku`, `search`, `listByOrganization`, `update`, `delete` |
-| `WarehouseRepository` | `create`, `findById`, `findByCode`, `listByOrganization`, `update`, `delete` |
-| `InventoryRepository` | `create`, `findById`, `findByProduct`, `findByWarehouse`, `findByProductAndWarehouse`, `listByOrganization`, `updateQuantity`, `update`, `delete` |
-| `CustomerRepository` | `create`, `findById`, `search`, `listByOrganization`, `update`, `delete` |
-| `SupplierRepository` | `create`, `findById`, `search`, `listByOrganization`, `update`, `delete` |
-
----
-
-## Database Migration & CLI Commands
-
-- **Run Up Migrations**: `npm run db:migrate`
-- **Rollback Migration**: `npm run db:rollback`
-- **Check Migration Status**: `npm run db:status`
-- **Seed Development Data**: `npm run db:seed`
-
-## Development & Build Commands
+## Commands & Testing
 
 - **Development Server**: `npm run dev`
 - **TypeScript Typecheck**: `npm run typecheck`
@@ -66,8 +147,5 @@ PostgreSQL Database
 - **Run Tests**: `npm run test`
 - **ESLint Linting**: `npm run lint`
 - **Prettier Format**: `npm run format`
-
-## API Endpoints
-
-### `GET /health`
-Returns system status and PostgreSQL connectivity.
+- **Migrations**: `npm run db:migrate`
+- **Seed Data**: `npm run db:seed`

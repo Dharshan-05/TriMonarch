@@ -1,5 +1,6 @@
 import { pool, closeDatabasePool } from '../config/database';
 import { logger } from '../utils/logger';
+import { hashPassword } from '../utils/password';
 
 export const seedDatabase = async (): Promise<void> => {
   const client = await pool.connect();
@@ -18,12 +19,13 @@ export const seedDatabase = async (): Promise<void> => {
     if (!orgId) throw new Error('Failed to seed organization');
 
     // 2. Seed User
+    const defaultPasswordHash = await hashPassword('Password123!');
     const userRes = await client.query<{ id: string }>(`
-      INSERT INTO users (organization_id, name, email, phone, status)
-      VALUES ($1, 'Admin User', 'admin@acme.com', '+15550100', 'active')
-      ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+      INSERT INTO users (organization_id, name, email, phone, status, password_hash)
+      VALUES ($1, 'Admin User', 'admin@acme.com', '+15550100', 'active', $2)
+      ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, password_hash = EXCLUDED.password_hash
       RETURNING id;
-    `, [orgId]);
+    `, [orgId, defaultPasswordHash]);
     const userId = userRes.rows[0]?.id;
     if (!userId) throw new Error('Failed to seed user');
 

@@ -1,6 +1,9 @@
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import { env } from './env';
 import { logger } from '../utils/logger';
+
+// Enforce PostgreSQL NUMERIC / DECIMAL (OID 1700) to return exact string representation
+types.setTypeParser(1700, (val: string) => val);
 
 export const pool = new Pool({
   host: env.DATABASE_HOST,

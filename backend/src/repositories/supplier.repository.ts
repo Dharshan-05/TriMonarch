@@ -1,14 +1,26 @@
 import { PoolClient } from 'pg';
 import { query, queryOne } from '../db/query';
 import { Supplier, CreateSupplierInput, UpdateSupplierInput } from '../types/database';
-import {
-  PaginationParams,
-  PaginatedResult,
-  buildPaginationClause,
-  createPaginatedResult,
-} from './base/pagination';
+import { BaseRepository } from './base/base.repository';
+import { BaseFilterParams, PaginatedResult } from './base';
+import { formatLikeSearch } from './base/repository.utils';
 
-export class SupplierRepository {
+export interface SupplierFilterParams extends BaseFilterParams {
+  query?: string;
+  status?: string;
+}
+
+export class SupplierRepository extends BaseRepository<
+  Supplier,
+  CreateSupplierInput,
+  UpdateSupplierInput,
+  SupplierFilterParams
+> {
+  protected readonly tableName = 'suppliers';
+  protected readonly allowedSortFields = ['name', 'email', 'phone', 'status', 'created_at', 'updated_at'];
+  protected readonly defaultSortBy = 'name';
+  protected readonly isOrganizationScoped = true;
+
   async create(data: CreateSupplierInput, client?: PoolClient): Promise<Supplier> {
     const rows = await query<Supplier>(
       `INSERT INTO suppliers (organization_id, name, email, phone, address, status)
@@ -33,58 +45,6 @@ export class SupplierRepository {
       [id, organizationId],
       client,
     );
-  }
-
-  async search(
-    organizationId: string,
-    searchParams: { query?: string; status?: string } & PaginationParams,
-    client?: PoolClient,
-  ): Promise<PaginatedResult<Supplier>> {
-    const conditions = ['organization_id = $1'];
-    const values: unknown[] = [organizationId];
-    let idx = 2;
-
-    if (searchParams.query) {
-      conditions.push(`(name ILIKE $${idx} OR email ILIKE $${idx} OR phone ILIKE $${idx})`);
-      values.push(`%${searchParams.query}%`);
-      idx++;
-    }
-
-    if (searchParams.status) {
-      conditions.push(`status = $${idx++}`);
-      values.push(searchParams.status);
-    }
-
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
-
-    const countRes = await query<{ count: string }>(
-      `SELECT COUNT(*) as count FROM suppliers ${whereClause};`,
-      values,
-      client,
-    );
-    const total = parseInt(countRes[0]?.count || '0', 10);
-
-    const pagination = buildPaginationClause({
-      params: searchParams,
-      allowedSortFields: ['name', 'email', 'status', 'created_at'],
-      defaultSortBy: 'name',
-    });
-
-    const items = await query<Supplier>(
-      `SELECT * FROM suppliers ${whereClause} ${pagination.sql};`,
-      values,
-      client,
-    );
-
-    return createPaginatedResult(items, total, pagination.page, pagination.pageSize);
-  }
-
-  async listByOrganization(
-    organizationId: string,
-    params?: PaginationParams & { status?: string },
-    client?: PoolClient,
-  ): Promise<PaginatedResult<Supplier>> {
-    return this.search(organizationId, { ...params }, client);
   }
 
   async update(
@@ -123,17 +83,40 @@ export class SupplierRepository {
     }
 
     values.push(id, organizationId);
-    const sql = `UPDATE suppliers SET ${fields.join(', ')} WHERE id = $${idx++} AND organization_id = $${idx} RETURNING *;`;
+    const sql = `UPDATE suppliers SET ${fields.join(
+      ', ',
+    )} WHERE id = $${idx++} AND organization_id = $${idx} RETURNING *;`;
     return queryOne<Supplier>(sql, values, client);
   }
 
-  async delete(organizationId: string, id: string, client?: PoolClient): Promise<boolean> {
-    const rows = await query<{ id: string }>(
-      'DELETE FROM suppliers WHERE id = $1 AND organization_id = $2 RETURNING id;',
-      [id, organizationId],
-      client,
-    );
-    return rows.length > 0;
+  protected override buildFilterConditions(
+    organizationId: string,
+    params?: SupplierFilterParams,
+  ): { conditions: string[]; values: unknown[] } {
+    const conditions: string[] = ['organization_id = $1'];
+    const values: unknown[] = [organizationId];
+    let idx = 2;
+
+    if (params?.query) {
+      conditions.push(`(name ILIKE $${idx} OR email ILIKE $${idx} OR phone ILIKE $${idx})`);
+      values.push(formatLikeSearch(params.query));
+      idx++;
+    }
+
+    if (params?.status) {
+      conditions.push(`status = $${idx++}`);
+      values.push(params.status);
+    }
+
+    return { conditions, values };
+  }
+
+  async search(
+    organizationId: string,
+    searchParams: SupplierFilterParams,
+    client?: PoolClient,
+  ): Promise<PaginatedResult<Supplier>> {
+    return this.listByOrganization(organizationId, searchParams, client);
   }
 }
 

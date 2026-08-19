@@ -76,7 +76,7 @@ describe('Entity Repositories', () => {
     const res = await userRepository.findById('org-100', 'user-1');
     expect(res).toEqual(mockUser);
     expect(queryModule.queryOne).toHaveBeenCalledWith(
-      'SELECT * FROM users WHERE id = $1 AND organization_id = $2;',
+      'SELECT id, organization_id, name, email, phone, status, created_at, updated_at FROM users WHERE id = $1 AND organization_id = $2;',
       ['user-1', 'org-100'],
       undefined,
     );

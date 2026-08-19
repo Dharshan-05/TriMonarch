@@ -29,6 +29,8 @@ export interface User {
   name: string;
   email: string;
   phone: string | null;
+  password_hash?: string | null;
+  last_login_at?: Date | null;
   status: 'active' | 'inactive' | 'suspended' | 'pending';
   created_at: Date;
   updated_at: Date;
@@ -158,6 +160,9 @@ export interface Product {
   description: string | null;
   category: string | null;
   unit: string;
+  price?: string | number;
+  cost?: string | number;
+  tax_rate?: string | number;
   status: 'active' | 'inactive' | 'discontinued';
   created_at: Date;
   updated_at: Date;
@@ -170,14 +175,21 @@ export interface CreateProductInput {
   description?: string | null;
   category?: string | null;
   unit?: string;
+  price?: string | number;
+  cost?: string | number;
+  tax_rate?: string | number;
   status?: 'active' | 'inactive' | 'discontinued';
 }
 
 export interface UpdateProductInput {
+  sku?: string;
   name?: string;
   description?: string | null;
   category?: string | null;
   unit?: string;
+  price?: string | number;
+  cost?: string | number;
+  tax_rate?: string | number;
   status?: 'active' | 'inactive' | 'discontinued';
 }
 
@@ -213,8 +225,8 @@ export interface Inventory {
   organization_id: string;
   product_id: string;
   warehouse_id: string;
-  quantity: number;
-  reorder_level: number;
+  quantity: number | string;
+  reorder_level: number | string;
   created_at: Date;
   updated_at: Date;
 }
@@ -223,13 +235,13 @@ export interface CreateInventoryInput {
   organization_id: string;
   product_id: string;
   warehouse_id: string;
-  quantity?: number;
-  reorder_level?: number;
+  quantity?: number | string;
+  reorder_level?: number | string;
 }
 
 export interface UpdateInventoryInput {
-  quantity?: number;
-  reorder_level?: number;
+  quantity?: number | string;
+  reorder_level?: number | string;
 }
 
 // Customer
@@ -290,4 +302,392 @@ export interface UpdateSupplierInput {
   phone?: string | null;
   address?: string | null;
   status?: 'active' | 'inactive';
+}
+
+// BOM (Bill of Materials)
+export interface Bom {
+  id: string;
+  organization_id: string;
+  product_id: string;
+  bom_code: string;
+  name: string;
+  version: number;
+  status: 'draft' | 'active' | 'inactive';
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreateBomInput {
+  organization_id: string;
+  product_id: string;
+  bom_code: string;
+  name: string;
+  version?: number;
+  status?: 'draft' | 'active' | 'inactive';
+}
+
+export interface UpdateBomInput {
+  product_id?: string;
+  name?: string;
+  version?: number;
+  status?: 'draft' | 'active' | 'inactive';
+}
+
+// BOM Item
+export interface BomItem {
+  id: string;
+  organization_id: string;
+  bom_id: string;
+  component_product_id: string;
+  quantity: string | number;
+  unit: string;
+  sequence: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreateBomItemInput {
+  organization_id: string;
+  bom_id: string;
+  component_product_id: string;
+  quantity?: string | number;
+  unit?: string;
+  sequence?: number;
+}
+
+export interface UpdateBomItemInput {
+  component_product_id?: string;
+  quantity?: string | number;
+  unit?: string;
+  sequence?: number;
+}
+
+// Sales Order
+export interface SalesOrder {
+  id: string;
+  organization_id: string;
+  customer_id: string;
+  order_number: string;
+  order_date: Date;
+  status: 'draft' | 'confirmed' | 'processing' | 'shipped' | 'completed' | 'cancelled';
+  currency: string;
+  subtotal: string | number;
+  tax_amount: string | number;
+  discount_amount: string | number;
+  total_amount: string | number;
+  notes: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreateSalesOrderInput {
+  organization_id: string;
+  customer_id: string;
+  order_number: string;
+  order_date?: Date | string;
+  status?: 'draft' | 'confirmed' | 'processing' | 'shipped' | 'completed' | 'cancelled';
+  currency?: string;
+  subtotal?: string | number;
+  tax_amount?: string | number;
+  discount_amount?: string | number;
+  total_amount?: string | number;
+  notes?: string | null;
+}
+
+export interface UpdateSalesOrderInput {
+  customer_id?: string;
+  order_number?: string;
+  order_date?: Date | string;
+  status?: 'draft' | 'confirmed' | 'processing' | 'shipped' | 'completed' | 'cancelled';
+  currency?: string;
+  subtotal?: string | number;
+  tax_amount?: string | number;
+  discount_amount?: string | number;
+  total_amount?: string | number;
+  notes?: string | null;
+}
+
+// Sales Order Item
+export interface SalesOrderItem {
+  id: string;
+  organization_id: string;
+  sales_order_id: string;
+  product_id: string;
+  quantity: string | number;
+  unit_price: string | number;
+  discount_amount: string | number;
+  tax_rate: string | number;
+  tax_amount: string | number;
+  line_total: string | number;
+  sequence: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreateSalesOrderItemInput {
+  organization_id: string;
+  sales_order_id: string;
+  product_id: string;
+  quantity?: string | number;
+  unit_price?: string | number;
+  discount_amount?: string | number;
+  tax_rate?: string | number;
+  tax_amount?: string | number;
+  line_total?: string | number;
+  sequence?: number;
+}
+
+export interface UpdateSalesOrderItemInput {
+  product_id?: string;
+  quantity?: string | number;
+  unit_price?: string | number;
+  discount_amount?: string | number;
+  tax_rate?: string | number;
+  tax_amount?: string | number;
+  line_total?: string | number;
+  sequence?: number;
+}
+
+// Purchase Order
+export interface PurchaseOrder {
+  id: string;
+  organization_id: string;
+  supplier_id: string;
+  order_number: string;
+  order_date: Date;
+  expected_delivery_date: Date | null;
+  status: 'draft' | 'submitted' | 'approved' | 'processing' | 'received' | 'completed' | 'cancelled';
+  currency: string;
+  subtotal: string | number;
+  tax_amount: string | number;
+  discount_amount: string | number;
+  total_amount: string | number;
+  notes: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreatePurchaseOrderInput {
+  organization_id: string;
+  supplier_id: string;
+  order_number: string;
+  order_date?: Date | string;
+  expected_delivery_date?: Date | string | null;
+  status?: 'draft' | 'submitted' | 'approved' | 'processing' | 'received' | 'completed' | 'cancelled';
+  currency?: string;
+  subtotal?: string | number;
+  tax_amount?: string | number;
+  discount_amount?: string | number;
+  total_amount?: string | number;
+  notes?: string | null;
+}
+
+export interface UpdatePurchaseOrderInput {
+  supplier_id?: string;
+  order_date?: Date | string;
+  expected_delivery_date?: Date | string | null;
+  status?: 'draft' | 'submitted' | 'approved' | 'processing' | 'received' | 'completed' | 'cancelled';
+  currency?: string;
+  subtotal?: string | number;
+  tax_amount?: string | number;
+  discount_amount?: string | number;
+  total_amount?: string | number;
+  notes?: string | null;
+}
+
+// Purchase Order Item
+export interface PurchaseOrderItem {
+  id: string;
+  organization_id: string;
+  purchase_order_id: string;
+  product_id: string;
+  quantity: string | number;
+  unit_cost: string | number;
+  discount_amount: string | number;
+  tax_rate: string | number;
+  tax_amount: string | number;
+  line_total: string | number;
+  sequence: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreatePurchaseOrderItemInput {
+  organization_id: string;
+  purchase_order_id: string;
+  product_id: string;
+  quantity?: string | number;
+  unit_cost?: string | number;
+  discount_amount?: string | number;
+  tax_rate?: string | number;
+  tax_amount?: string | number;
+  line_total?: string | number;
+  sequence?: number;
+}
+
+export interface UpdatePurchaseOrderItemInput {
+  product_id?: string;
+  quantity?: string | number;
+  unit_cost?: string | number;
+  discount_amount?: string | number;
+  tax_rate?: string | number;
+  tax_amount?: string | number;
+  line_total?: string | number;
+  sequence?: number;
+}
+
+// Manufacturing Order
+export interface ManufacturingOrder {
+  id: string;
+  organization_id: string;
+  bom_id: string;
+  product_id: string;
+  order_number: string;
+  planned_quantity: string | number;
+  completed_quantity: string | number;
+  scheduled_start_date: Date | null;
+  scheduled_end_date: Date | null;
+  actual_start_date: Date | null;
+  actual_end_date: Date | null;
+  status: 'draft' | 'planned' | 'released' | 'in_progress' | 'completed' | 'cancelled';
+  notes: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreateManufacturingOrderInput {
+  organization_id: string;
+  bom_id: string;
+  product_id: string;
+  order_number: string;
+  planned_quantity?: string | number;
+  completed_quantity?: string | number;
+  scheduled_start_date?: Date | string | null;
+  scheduled_end_date?: Date | string | null;
+  actual_start_date?: Date | string | null;
+  actual_end_date?: Date | string | null;
+  status?: 'draft' | 'planned' | 'released' | 'in_progress' | 'completed' | 'cancelled';
+  notes?: string | null;
+}
+
+export interface UpdateManufacturingOrderInput {
+  bom_id?: string;
+  product_id?: string;
+  planned_quantity?: string | number;
+  completed_quantity?: string | number;
+  scheduled_start_date?: Date | string | null;
+  scheduled_end_date?: Date | string | null;
+  actual_start_date?: Date | string | null;
+  actual_end_date?: Date | string | null;
+  status?: 'draft' | 'planned' | 'released' | 'in_progress' | 'completed' | 'cancelled';
+  notes?: string | null;
+}
+
+// Manufacturing Order Item
+export interface ManufacturingOrderItem {
+  id: string;
+  organization_id: string;
+  manufacturing_order_id: string;
+  component_product_id: string;
+  bom_item_id: string | null;
+  required_quantity: string | number;
+  consumed_quantity: string | number;
+  unit: string;
+  sequence: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreateManufacturingOrderItemInput {
+  organization_id: string;
+  manufacturing_order_id: string;
+  component_product_id: string;
+  bom_item_id?: string | null;
+  required_quantity?: string | number;
+  consumed_quantity?: string | number;
+  unit?: string;
+  sequence?: number;
+}
+
+export interface UpdateManufacturingOrderItemInput {
+  component_product_id?: string;
+  bom_item_id?: string | null;
+  required_quantity?: string | number;
+  consumed_quantity?: string | number;
+  unit?: string;
+  sequence?: number;
+}
+
+// Stock Ledger
+export type StockMovementType = 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER_IN' | 'TRANSFER_OUT';
+
+export interface StockLedgerEntry {
+  id: string;
+  organization_id: string;
+  product_id: string;
+  warehouse_id: string;
+  movement_type: StockMovementType;
+  quantity: string | number;
+  unit: string;
+  reference_type: string | null;
+  reference_id: string | null;
+  notes: string | null;
+  created_at: Date;
+}
+
+export interface CreateStockLedgerInput {
+  organization_id: string;
+  product_id: string;
+  warehouse_id: string;
+  movement_type: StockMovementType;
+  quantity: string | number;
+  unit?: string;
+  reference_type?: string | null;
+  reference_id?: string | null;
+  notes?: string | null;
+}
+
+export interface StockMovementSummary {
+  total_in: string;
+  total_out: string;
+  total_adjustment: string;
+  current_stock: string;
+  movement_count: number;
+}
+
+// Stock Reservation
+export type StockReservationStatus = 'active' | 'released' | 'consumed' | 'cancelled' | 'expired';
+
+export interface StockReservation {
+  id: string;
+  organization_id: string;
+  product_id: string;
+  warehouse_id: string;
+  quantity: string | number;
+  status: StockReservationStatus;
+  reference_type: string | null;
+  reference_id: string | null;
+  expires_at: Date | null;
+  notes: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreateStockReservationInput {
+  organization_id: string;
+  product_id: string;
+  warehouse_id: string;
+  quantity: string | number;
+  status?: StockReservationStatus;
+  reference_type?: string | null;
+  reference_id?: string | null;
+  expires_at?: Date | string | null;
+  notes?: string | null;
+}
+
+export interface UpdateStockReservationInput {
+  quantity?: string | number;
+  status?: StockReservationStatus;
+  expires_at?: Date | string | null;
+  notes?: string | null;
 }

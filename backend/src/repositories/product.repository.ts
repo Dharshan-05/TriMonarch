@@ -1,18 +1,40 @@
 import { PoolClient } from 'pg';
 import { query, queryOne } from '../db/query';
 import { Product, CreateProductInput, UpdateProductInput } from '../types/database';
-import {
-  PaginationParams,
-  PaginatedResult,
-  buildPaginationClause,
-  createPaginatedResult,
-} from './base/pagination';
+import { BaseRepository } from './base/base.repository';
+import { BaseFilterParams, PaginatedResult } from './base';
+import { formatLikeSearch } from './base/repository.utils';
 
-export class ProductRepository {
+export interface ProductFilterParams extends BaseFilterParams {
+  query?: string;
+  category?: string;
+  status?: string;
+}
+
+export class ProductRepository extends BaseRepository<
+  Product,
+  CreateProductInput,
+  UpdateProductInput,
+  ProductFilterParams
+> {
+  protected readonly tableName = 'products';
+  protected readonly allowedSortFields = [
+    'name',
+    'sku',
+    'category',
+    'price',
+    'cost',
+    'status',
+    'created_at',
+    'updated_at',
+  ];
+  protected readonly defaultSortBy = 'name';
+  protected readonly isOrganizationScoped = true;
+
   async create(data: CreateProductInput, client?: PoolClient): Promise<Product> {
     const rows = await query<Product>(
-      `INSERT INTO products (organization_id, sku, name, description, category, unit, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO products (organization_id, sku, name, description, category, unit, price, cost, tax_rate, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *;`,
       [
         data.organization_id,
@@ -21,6 +43,9 @@ export class ProductRepository {
         data.description || null,
         data.category || null,
         data.unit || 'pcs',
+        data.price !== undefined ? String(data.price) : '0.0000',
+        data.cost !== undefined ? String(data.cost) : '0.0000',
+        data.tax_rate !== undefined ? String(data.tax_rate) : '0.000000',
         data.status || 'active',
       ],
       client,
@@ -44,63 +69,6 @@ export class ProductRepository {
     );
   }
 
-  async search(
-    organizationId: string,
-    searchParams: { query?: string; category?: string; status?: string } & PaginationParams,
-    client?: PoolClient,
-  ): Promise<PaginatedResult<Product>> {
-    const conditions = ['organization_id = $1'];
-    const values: unknown[] = [organizationId];
-    let idx = 2;
-
-    if (searchParams.query) {
-      conditions.push(`(name ILIKE $${idx} OR sku ILIKE $${idx})`);
-      values.push(`%${searchParams.query}%`);
-      idx++;
-    }
-
-    if (searchParams.category) {
-      conditions.push(`category = $${idx++}`);
-      values.push(searchParams.category);
-    }
-
-    if (searchParams.status) {
-      conditions.push(`status = $${idx++}`);
-      values.push(searchParams.status);
-    }
-
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
-
-    const countRes = await query<{ count: string }>(
-      `SELECT COUNT(*) as count FROM products ${whereClause};`,
-      values,
-      client,
-    );
-    const total = parseInt(countRes[0]?.count || '0', 10);
-
-    const pagination = buildPaginationClause({
-      params: searchParams,
-      allowedSortFields: ['name', 'sku', 'category', 'status', 'created_at'],
-      defaultSortBy: 'name',
-    });
-
-    const items = await query<Product>(
-      `SELECT * FROM products ${whereClause} ${pagination.sql};`,
-      values,
-      client,
-    );
-
-    return createPaginatedResult(items, total, pagination.page, pagination.pageSize);
-  }
-
-  async listByOrganization(
-    organizationId: string,
-    params?: PaginationParams & { category?: string; status?: string },
-    client?: PoolClient,
-  ): Promise<PaginatedResult<Product>> {
-    return this.search(organizationId, { ...params }, client);
-  }
-
   async update(
     organizationId: string,
     id: string,
@@ -111,6 +79,10 @@ export class ProductRepository {
     const values: unknown[] = [];
     let idx = 1;
 
+    if (data.sku !== undefined) {
+      fields.push(`sku = $${idx++}`);
+      values.push(data.sku);
+    }
     if (data.name !== undefined) {
       fields.push(`name = $${idx++}`);
       values.push(data.name);
@@ -127,6 +99,18 @@ export class ProductRepository {
       fields.push(`unit = $${idx++}`);
       values.push(data.unit);
     }
+    if (data.price !== undefined) {
+      fields.push(`price = $${idx++}`);
+      values.push(String(data.price));
+    }
+    if (data.cost !== undefined) {
+      fields.push(`cost = $${idx++}`);
+      values.push(String(data.cost));
+    }
+    if (data.tax_rate !== undefined) {
+      fields.push(`tax_rate = $${idx++}`);
+      values.push(String(data.tax_rate));
+    }
     if (data.status !== undefined) {
       fields.push(`status = $${idx++}`);
       values.push(data.status);
@@ -137,17 +121,45 @@ export class ProductRepository {
     }
 
     values.push(id, organizationId);
-    const sql = `UPDATE products SET ${fields.join(', ')} WHERE id = $${idx++} AND organization_id = $${idx} RETURNING *;`;
+    const sql = `UPDATE products SET ${fields.join(
+      ', ',
+    )} WHERE id = $${idx++} AND organization_id = $${idx} RETURNING *;`;
     return queryOne<Product>(sql, values, client);
   }
 
-  async delete(organizationId: string, id: string, client?: PoolClient): Promise<boolean> {
-    const rows = await query<{ id: string }>(
-      'DELETE FROM products WHERE id = $1 AND organization_id = $2 RETURNING id;',
-      [id, organizationId],
-      client,
-    );
-    return rows.length > 0;
+  protected override buildFilterConditions(
+    organizationId: string,
+    params?: ProductFilterParams,
+  ): { conditions: string[]; values: unknown[] } {
+    const conditions: string[] = ['organization_id = $1'];
+    const values: unknown[] = [organizationId];
+    let idx = 2;
+
+    if (params?.query) {
+      conditions.push(`(name ILIKE $${idx} OR sku ILIKE $${idx})`);
+      values.push(formatLikeSearch(params.query));
+      idx++;
+    }
+
+    if (params?.category) {
+      conditions.push(`category = $${idx++}`);
+      values.push(params.category);
+    }
+
+    if (params?.status) {
+      conditions.push(`status = $${idx++}`);
+      values.push(params.status);
+    }
+
+    return { conditions, values };
+  }
+
+  async search(
+    organizationId: string,
+    searchParams: ProductFilterParams,
+    client?: PoolClient,
+  ): Promise<PaginatedResult<Product>> {
+    return this.listByOrganization(organizationId, searchParams, client);
   }
 }
 

@@ -13,22 +13,53 @@ export class InventoryRepository {
     const rows = await query<Inventory>(
       `INSERT INTO inventory (organization_id, product_id, warehouse_id, quantity, reorder_level)
        VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (product_id, warehouse_id) DO UPDATE SET quantity = inventory.quantity
        RETURNING *;`,
       [
         data.organization_id,
         data.product_id,
         data.warehouse_id,
-        data.quantity ?? 0,
-        data.reorder_level ?? 0,
+        data.quantity !== undefined ? String(data.quantity) : '0.0000',
+        data.reorder_level !== undefined ? String(data.reorder_level) : '0.0000',
       ],
       client,
     );
     return rows[0]!;
   }
 
+  async ensureInventoryRowLocked(
+    organizationId: string,
+    productId: string,
+    warehouseId: string,
+    initialQuantity: string = '0.0000',
+    client?: PoolClient,
+  ): Promise<Inventory> {
+    let inv = await this.lockForUpdate(organizationId, productId, warehouseId, client);
+    if (inv) return inv;
+
+    await query(
+      `INSERT INTO inventory (organization_id, product_id, warehouse_id, quantity, reorder_level)
+       VALUES ($1, $2, $3, $4, '0.0000')
+       ON CONFLICT (product_id, warehouse_id) DO NOTHING;`,
+      [organizationId, productId, warehouseId, initialQuantity],
+      client,
+    );
+
+    inv = await this.lockForUpdate(organizationId, productId, warehouseId, client);
+    return inv!;
+  }
+
   async findById(organizationId: string, id: string, client?: PoolClient): Promise<Inventory | null> {
     return queryOne<Inventory>(
       'SELECT * FROM inventory WHERE id = $1 AND organization_id = $2;',
+      [id, organizationId],
+      client,
+    );
+  }
+
+  async lockByIdForUpdate(organizationId: string, id: string, client?: PoolClient): Promise<Inventory | null> {
+    return queryOne<Inventory>(
+      'SELECT * FROM inventory WHERE id = $1 AND organization_id = $2 FOR UPDATE;',
       [id, organizationId],
       client,
     );
@@ -58,6 +89,19 @@ export class InventoryRepository {
   ): Promise<Inventory | null> {
     return queryOne<Inventory>(
       'SELECT * FROM inventory WHERE product_id = $1 AND warehouse_id = $2 AND organization_id = $3;',
+      [productId, warehouseId, organizationId],
+      client,
+    );
+  }
+
+  async lockForUpdate(
+    organizationId: string,
+    productId: string,
+    warehouseId: string,
+    client?: PoolClient,
+  ): Promise<Inventory | null> {
+    return queryOne<Inventory>(
+      'SELECT * FROM inventory WHERE product_id = $1 AND warehouse_id = $2 AND organization_id = $3 FOR UPDATE;',
       [productId, warehouseId, organizationId],
       client,
     );
@@ -93,12 +137,28 @@ export class InventoryRepository {
   async updateQuantity(
     organizationId: string,
     id: string,
-    quantity: number,
+    quantity: number | string,
     client?: PoolClient,
   ): Promise<Inventory | null> {
     return queryOne<Inventory>(
       'UPDATE inventory SET quantity = $1 WHERE id = $2 AND organization_id = $3 RETURNING *;',
-      [quantity, id, organizationId],
+      [String(quantity), id, organizationId],
+      client,
+    );
+  }
+
+  async adjustQuantityAtomic(
+    organizationId: string,
+    id: string,
+    delta: number | string,
+    client?: PoolClient,
+  ): Promise<Inventory | null> {
+    return queryOne<Inventory>(
+      `UPDATE inventory
+       SET quantity = quantity + $1
+       WHERE id = $2 AND organization_id = $3 AND (quantity + $1) >= 0
+       RETURNING *;`,
+      [String(delta), id, organizationId],
       client,
     );
   }
@@ -115,11 +175,11 @@ export class InventoryRepository {
 
     if (data.quantity !== undefined) {
       fields.push(`quantity = $${idx++}`);
-      values.push(data.quantity);
+      values.push(String(data.quantity));
     }
     if (data.reorder_level !== undefined) {
       fields.push(`reorder_level = $${idx++}`);
-      values.push(data.reorder_level);
+      values.push(String(data.reorder_level));
     }
 
     if (fields.length === 0) {

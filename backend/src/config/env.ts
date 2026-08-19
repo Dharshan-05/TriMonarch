@@ -33,6 +33,14 @@ const envSchema = z.object({
     .string()
     .default('false')
     .transform((val) => val === 'true' || val === '1'),
+
+  JWT_SECRET: z
+    .string()
+    .default('development-super-secret-key-32-chars-long')
+    .refine((val) => val.length >= 32, {
+      message: 'JWT_SECRET must be at least 32 characters long',
+    }),
+  JWT_ACCESS_TOKEN_EXPIRES_IN: z.string().default('15m'),
 });
 
 export type Env = z.infer<typeof envSchema>;
