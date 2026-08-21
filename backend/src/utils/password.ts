@@ -2,12 +2,15 @@ import bcrypt from 'bcrypt';
 import { ValidationError } from '../types';
 
 const SALT_ROUNDS = 10;
-const MIN_PASSWORD_LENGTH = 8;
+const MIN_PASSWORD_LENGTH = 12;
 const MAX_PASSWORD_LENGTH = 128;
 
 export const validatePasswordPolicy = (password: string): void => {
   if (!password || typeof password !== 'string') {
     throw new ValidationError('Password is required');
+  }
+  if (password.trim().length === 0) {
+    throw new ValidationError('Password must not be empty or whitespace only');
   }
   if (password.length < MIN_PASSWORD_LENGTH) {
     throw new ValidationError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long`);

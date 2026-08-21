@@ -3,10 +3,12 @@ import { query, queryOne } from '../db/query';
 import {
   ManufacturingOrder,
   ManufacturingOrderItem,
+  ManufacturingOrderStatusHistory,
   CreateManufacturingOrderInput,
   UpdateManufacturingOrderInput,
   CreateManufacturingOrderItemInput,
   UpdateManufacturingOrderItemInput,
+  CreateManufacturingOrderStatusHistoryInput,
 } from '../types/database';
 import { BaseRepository } from './base/base.repository';
 import { BaseFilterParams, PaginatedResult } from './base';
@@ -15,8 +17,13 @@ import { formatLikeSearch } from './base/repository.utils';
 export interface ManufacturingOrderFilterParams extends BaseFilterParams {
   query?: string;
   bomId?: string;
+  bom_id?: string;
   productId?: string;
+  product_id?: string;
+  warehouseId?: string;
+  warehouse_id?: string;
   status?: string;
+  priority?: string;
   scheduledStartDate?: Date | string;
   scheduledEndDate?: Date | string;
 }
@@ -30,6 +37,7 @@ export class ManufacturingRepository extends BaseRepository<
   protected readonly tableName = 'manufacturing_orders';
   protected readonly allowedSortFields = [
     'order_number',
+    'mo_number',
     'planned_quantity',
     'completed_quantity',
     'scheduled_start_date',
@@ -42,26 +50,33 @@ export class ManufacturingRepository extends BaseRepository<
   protected readonly isOrganizationScoped = true;
 
   async create(data: CreateManufacturingOrderInput, client?: PoolClient): Promise<ManufacturingOrder> {
+    const orderNumber = data.order_number || data.mo_number || `MO-${Date.now()}`;
+    const moNumber = data.mo_number || orderNumber;
+
     const rows = await query<ManufacturingOrder>(
       `INSERT INTO manufacturing_orders (
-         organization_id, bom_id, product_id, order_number, planned_quantity, completed_quantity,
-         scheduled_start_date, scheduled_end_date, actual_start_date, actual_end_date, status, notes
+         organization_id, bom_id, product_id, warehouse_id, order_number, mo_number,
+         planned_quantity, completed_quantity, scheduled_start_date, scheduled_end_date,
+         actual_start_date, actual_end_date, status, notes, created_by
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *;`,
       [
         data.organization_id,
         data.bom_id,
         data.product_id,
-        data.order_number,
+        data.warehouse_id || null,
+        orderNumber,
+        moNumber,
         data.planned_quantity !== undefined ? String(data.planned_quantity) : '1.0000',
         data.completed_quantity !== undefined ? String(data.completed_quantity) : '0.0000',
-        data.scheduled_start_date || null,
-        data.scheduled_end_date || null,
+        data.scheduled_start_date || data.planned_start_date || null,
+        data.scheduled_end_date || data.planned_end_date || null,
         data.actual_start_date || null,
         data.actual_end_date || null,
         data.status || 'draft',
         data.notes || null,
+        data.created_by || null,
       ],
       client,
     );
@@ -76,14 +91,49 @@ export class ManufacturingRepository extends BaseRepository<
     );
   }
 
+  async findByIdWithItems(
+    organizationId: string,
+    id: string,
+    client?: PoolClient,
+  ): Promise<(ManufacturingOrder & { items: ManufacturingOrderItem[] }) | null> {
+    const mo = await this.findById(organizationId, id, client);
+    if (!mo) return null;
+
+    const items = await this.listItems(organizationId, id, client);
+    return {
+      ...mo,
+      items,
+    };
+  }
+
   async findByOrderNumber(
     organizationId: string,
     orderNumber: string,
     client?: PoolClient,
   ): Promise<ManufacturingOrder | null> {
     return queryOne<ManufacturingOrder>(
-      'SELECT * FROM manufacturing_orders WHERE order_number = $1 AND organization_id = $2;',
+      'SELECT * FROM manufacturing_orders WHERE (order_number = $1 OR mo_number = $1) AND organization_id = $2;',
       [orderNumber, organizationId],
+      client,
+    );
+  }
+
+  async findByMoNumber(
+    organizationId: string,
+    moNumber: string,
+    client?: PoolClient,
+  ): Promise<ManufacturingOrder | null> {
+    return this.findByOrderNumber(organizationId, moNumber, client);
+  }
+
+  async findByWarehouseId(
+    organizationId: string,
+    warehouseId: string,
+    client?: PoolClient,
+  ): Promise<ManufacturingOrder[]> {
+    return query<ManufacturingOrder>(
+      'SELECT * FROM manufacturing_orders WHERE warehouse_id = $1 AND organization_id = $2 ORDER BY created_at DESC;',
+      [warehouseId, organizationId],
       client,
     );
   }
@@ -112,6 +162,18 @@ export class ManufacturingRepository extends BaseRepository<
     );
   }
 
+  async lockByIdForUpdate(
+    organizationId: string,
+    id: string,
+    client?: PoolClient,
+  ): Promise<ManufacturingOrder | null> {
+    return queryOne<ManufacturingOrder>(
+      'SELECT * FROM manufacturing_orders WHERE id = $1 AND organization_id = $2 FOR UPDATE;',
+      [id, organizationId],
+      client,
+    );
+  }
+
   async update(
     organizationId: string,
     id: string,
@@ -130,6 +192,18 @@ export class ManufacturingRepository extends BaseRepository<
       fields.push(`product_id = $${idx++}`);
       values.push(data.product_id);
     }
+    if (data.warehouse_id !== undefined) {
+      fields.push(`warehouse_id = $${idx++}`);
+      values.push(data.warehouse_id);
+    }
+    if (data.order_number !== undefined) {
+      fields.push(`order_number = $${idx++}`);
+      values.push(data.order_number);
+    }
+    if (data.mo_number !== undefined) {
+      fields.push(`mo_number = $${idx++}`);
+      values.push(data.mo_number);
+    }
     if (data.planned_quantity !== undefined) {
       fields.push(`planned_quantity = $${idx++}`);
       values.push(String(data.planned_quantity));
@@ -138,13 +212,19 @@ export class ManufacturingRepository extends BaseRepository<
       fields.push(`completed_quantity = $${idx++}`);
       values.push(String(data.completed_quantity));
     }
-    if (data.scheduled_start_date !== undefined) {
-      fields.push(`scheduled_start_date = $${idx++}`);
-      values.push(data.scheduled_start_date);
+    if (data.produced_quantity !== undefined) {
+      fields.push(`produced_quantity = $${idx++}`);
+      values.push(String(data.produced_quantity));
     }
-    if (data.scheduled_end_date !== undefined) {
+    const schedStart = data.scheduled_start_date !== undefined ? data.scheduled_start_date : data.planned_start_date;
+    if (schedStart !== undefined) {
+      fields.push(`scheduled_start_date = $${idx++}`);
+      values.push(schedStart);
+    }
+    const schedEnd = data.scheduled_end_date !== undefined ? data.scheduled_end_date : data.planned_end_date;
+    if (schedEnd !== undefined) {
       fields.push(`scheduled_end_date = $${idx++}`);
-      values.push(data.scheduled_end_date);
+      values.push(schedEnd);
     }
     if (data.actual_start_date !== undefined) {
       fields.push(`actual_start_date = $${idx++}`);
@@ -161,6 +241,10 @@ export class ManufacturingRepository extends BaseRepository<
     if (data.notes !== undefined) {
       fields.push(`notes = $${idx++}`);
       values.push(data.notes);
+    }
+    if (data.updated_by !== undefined) {
+      fields.push(`updated_by = $${idx++}`);
+      values.push(data.updated_by);
     }
 
     if (fields.length === 0) {
@@ -183,19 +267,27 @@ export class ManufacturingRepository extends BaseRepository<
     let idx = 2;
 
     if (params?.query) {
-      conditions.push(`(order_number ILIKE $${idx} OR notes ILIKE $${idx})`);
+      conditions.push(`(order_number ILIKE $${idx} OR mo_number ILIKE $${idx} OR notes ILIKE $${idx})`);
       values.push(formatLikeSearch(params.query));
       idx++;
     }
 
-    if (params?.bomId) {
+    const bId = params?.bom_id || params?.bomId;
+    if (bId) {
       conditions.push(`bom_id = $${idx++}`);
-      values.push(params.bomId);
+      values.push(bId);
     }
 
-    if (params?.productId) {
+    const pId = params?.product_id || params?.productId;
+    if (pId) {
       conditions.push(`product_id = $${idx++}`);
-      values.push(params.productId);
+      values.push(pId);
+    }
+
+    const wId = params?.warehouse_id || params?.warehouseId;
+    if (wId) {
+      conditions.push(`warehouse_id = $${idx++}`);
+      values.push(wId);
     }
 
     if (params?.status) {
@@ -216,6 +308,14 @@ export class ManufacturingRepository extends BaseRepository<
     return { conditions, values };
   }
 
+  async listOrders(
+    organizationId: string,
+    params?: ManufacturingOrderFilterParams,
+    client?: PoolClient,
+  ): Promise<PaginatedResult<ManufacturingOrder>> {
+    return this.listByOrganization(organizationId, params, client);
+  }
+
   async search(
     organizationId: string,
     searchParams: ManufacturingOrderFilterParams,
@@ -224,14 +324,14 @@ export class ManufacturingRepository extends BaseRepository<
     return this.listByOrganization(organizationId, searchParams, client);
   }
 
-  // Item Operations
+  // Item / Component Operations
   async createItem(data: CreateManufacturingOrderItemInput, client?: PoolClient): Promise<ManufacturingOrderItem> {
     const rows = await query<ManufacturingOrderItem>(
       `INSERT INTO manufacturing_order_items (
          organization_id, manufacturing_order_id, component_product_id, bom_item_id,
-         required_quantity, consumed_quantity, unit, sequence
+         required_quantity, consumed_quantity, unit, sequence, notes
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *;`,
       [
         data.organization_id,
@@ -242,6 +342,7 @@ export class ManufacturingRepository extends BaseRepository<
         data.consumed_quantity !== undefined ? String(data.consumed_quantity) : '0.0000',
         data.unit || 'pcs',
         data.sequence !== undefined ? data.sequence : 1,
+        data.notes || null,
       ],
       client,
     );
@@ -318,6 +419,10 @@ export class ManufacturingRepository extends BaseRepository<
       fields.push(`sequence = $${idx++}`);
       values.push(data.sequence);
     }
+    if (data.notes !== undefined) {
+      fields.push(`notes = $${idx++}`);
+      values.push(data.notes);
+    }
 
     if (fields.length === 0) {
       return this.findItemById(organizationId, id, client);
@@ -341,6 +446,59 @@ export class ManufacturingRepository extends BaseRepository<
       client,
     );
     return rows.length > 0;
+  }
+
+  async deleteItemsByOrderId(
+    organizationId: string,
+    manufacturingOrderId: string,
+    client?: PoolClient,
+  ): Promise<void> {
+    await query(
+      'DELETE FROM manufacturing_order_items WHERE manufacturing_order_id = $1 AND organization_id = $2;',
+      [manufacturingOrderId, organizationId],
+      client,
+    );
+  }
+
+  // Status History Operations
+  async createStatusHistory(
+    data: CreateManufacturingOrderStatusHistoryInput,
+    client?: PoolClient,
+  ): Promise<ManufacturingOrderStatusHistory> {
+    const rows = await query<ManufacturingOrderStatusHistory>(
+      `INSERT INTO manufacturing_order_status_history (
+         organization_id, manufacturing_order_id, from_status, to_status,
+         changed_by, reason, request_id, metadata
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *;`,
+      [
+        data.organization_id,
+        data.manufacturing_order_id,
+        data.from_status,
+        data.to_status,
+        data.changed_by || null,
+        data.reason || null,
+        data.request_id || null,
+        JSON.stringify(data.metadata || {}),
+      ],
+      client,
+    );
+    return rows[0]!;
+  }
+
+  async listStatusHistory(
+    organizationId: string,
+    manufacturingOrderId: string,
+    client?: PoolClient,
+  ): Promise<ManufacturingOrderStatusHistory[]> {
+    return query<ManufacturingOrderStatusHistory>(
+      `SELECT * FROM manufacturing_order_status_history
+       WHERE manufacturing_order_id = $1 AND organization_id = $2
+       ORDER BY created_at ASC;`,
+      [manufacturingOrderId, organizationId],
+      client,
+    );
   }
 }
 

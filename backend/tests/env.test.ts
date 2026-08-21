@@ -11,8 +11,12 @@ describe('Environment Validation', () => {
       DATABASE_PORT: '5433',
       DATABASE_NAME: 'test_db',
       DATABASE_USER: 'admin',
-      DATABASE_PASSWORD: 'secretpassword',
+      DATABASE_PASSWORD: 'secretpassword123!#$',
       DATABASE_SSL: 'true',
+      JWT_SECRET: 'a-super-secret-production-jwt-secret-key-32-chars',
+      JWT_ACCESS_SECRET: 'a-super-secret-production-access-secret-key-32-chars',
+      JWT_REFRESH_SECRET: 'a-super-secret-production-refresh-secret-key-32-chars',
+      CORS_ORIGIN: 'https://app.example.com',
     };
 
     const parsed = validateEnv(mockEnv);
@@ -23,7 +27,7 @@ describe('Environment Validation', () => {
     expect(parsed.DATABASE_PORT).toBe(5433);
     expect(parsed.DATABASE_NAME).toBe('test_db');
     expect(parsed.DATABASE_USER).toBe('admin');
-    expect(parsed.DATABASE_PASSWORD).toBe('secretpassword');
+    expect(parsed.DATABASE_PASSWORD).toBe('secretpassword123!#$');
     expect(parsed.DATABASE_SSL).toBe(true);
   });
 

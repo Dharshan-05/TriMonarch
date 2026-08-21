@@ -1,8 +1,9 @@
+import { PoolClient } from 'pg';
 import { inventoryRepository } from '../repositories/inventory.repository';
 import { productRepository } from '../repositories/product.repository';
 import { warehouseRepository } from '../repositories/warehouse.repository';
 import { stockLedgerRepository } from '../repositories/stockLedger.repository';
-import { Inventory } from '../types/database';
+import { Inventory, CreateInventoryInput, StockLedgerEntry } from '../types/database';
 import {
   InsufficientStockError,
   NegativeStockError,
@@ -14,6 +15,7 @@ import {
 import { PaginationParams, PaginatedResult } from '../repositories/base/pagination';
 import { withTransaction } from '../db/transaction';
 import { auditService } from '../audit/audit.service';
+import { businessEventService } from './businessEvent.service';
 import {
   toDecimal,
   formatDecimal,
@@ -55,6 +57,51 @@ export interface AdjustStockInput {
 }
 
 export class InventoryService {
+  async createInventory(
+    data: CreateInventoryInput,
+    userId?: string,
+    requestId?: string,
+  ): Promise<Inventory> {
+    return withTransaction(async (tx) => {
+      const product = await productRepository.findById(data.organization_id, data.product_id, tx);
+      if (!product) {
+        throw new ProductNotFoundError(`Product with ID ${data.product_id} not found`);
+      }
+
+      const warehouse = await warehouseRepository.findById(data.organization_id, data.warehouse_id, tx);
+      if (!warehouse) {
+        throw new WarehouseNotFoundError(`Warehouse with ID ${data.warehouse_id} not found`);
+      }
+
+      const inv = await inventoryRepository.create(data, tx);
+
+      await auditService.recordAuditEvent(
+        {
+          organization_id: data.organization_id,
+          user_id: userId,
+          action: 'CREATE',
+          entity_type: 'INVENTORY',
+          entity_id: inv.id,
+          request_id: requestId,
+          success: true,
+          metadata: { product_id: inv.product_id, warehouse_id: inv.warehouse_id, quantity: inv.quantity },
+        },
+        tx,
+      );
+
+      await businessEventService.emit({
+        eventName: 'INVENTORY_CREATED',
+        organization_id: data.organization_id,
+        user_id: userId,
+        request_id: requestId,
+        metadata: { inventory_id: inv.id, product_id: inv.product_id, warehouse_id: inv.warehouse_id },
+        client: tx,
+      });
+
+      return inv;
+    });
+  }
+
   async getInventoryById(organizationId: string, id: string): Promise<Inventory> {
     const inv = await inventoryRepository.findById(organizationId, id);
     if (!inv) {
@@ -104,6 +151,7 @@ export class InventoryService {
     input: IncreaseStockInput,
     userId?: string,
     requestId?: string,
+    client?: PoolClient,
   ): Promise<Inventory> {
     let qtyDecimal;
     try {
@@ -118,7 +166,7 @@ export class InventoryService {
 
     const qtyStr = formatDecimal(qtyDecimal, QUANTITY_SCALE);
 
-    return withTransaction(async (tx) => {
+    const execute = async (tx: PoolClient) => {
       const product = await productRepository.findById(input.organization_id, input.product_id, tx);
       if (!product) {
         throw new ProductNotFoundError(`Product with ID ${input.product_id} not found`);
@@ -179,13 +227,19 @@ export class InventoryService {
       );
 
       return inv;
-    });
+    };
+
+    if (client) {
+      return execute(client);
+    }
+    return withTransaction(execute);
   }
 
   async decreaseStock(
     input: DecreaseStockInput,
     userId?: string,
     requestId?: string,
+    client?: PoolClient,
   ): Promise<Inventory> {
     let qtyDecimal;
     try {
@@ -200,7 +254,7 @@ export class InventoryService {
 
     const qtyStr = formatDecimal(qtyDecimal, QUANTITY_SCALE);
 
-    return withTransaction(async (tx) => {
+    const execute = async (tx: PoolClient) => {
       const product = await productRepository.findById(input.organization_id, input.product_id, tx);
       if (!product) {
         throw new ProductNotFoundError(`Product with ID ${input.product_id} not found`);
@@ -271,7 +325,12 @@ export class InventoryService {
       );
 
       return inv;
-    });
+    };
+
+    if (client) {
+      return execute(client);
+    }
+    return withTransaction(execute);
   }
 
   async adjustStock(
@@ -281,17 +340,106 @@ export class InventoryService {
   ): Promise<Inventory> {
     const { stockAdjustmentService } = await import('./stockAdjustment.service');
     const res = await stockAdjustmentService.adjustStock(input, userId, requestId);
+
+    await businessEventService.emit({
+      eventName: 'INVENTORY_ADJUSTED',
+      organization_id: input.organization_id,
+      user_id: userId,
+      request_id: requestId,
+      metadata: { product_id: input.product_id, warehouse_id: input.warehouse_id },
+    });
+
     return res.inventory;
+  }
+
+  async adjustStockById(
+    organizationId: string,
+    id: string,
+    data: { target_quantity?: string | number; delta_quantity?: string | number; quantity?: string | number; reason?: string },
+    userId?: string,
+    requestId?: string,
+  ): Promise<Inventory> {
+    const inv = await this.getInventoryById(organizationId, id);
+    const adjustInput: AdjustStockInput = {
+      organization_id: organizationId,
+      product_id: inv.product_id,
+      warehouse_id: inv.warehouse_id,
+      target_quantity: data.target_quantity ?? data.quantity,
+      delta_quantity: data.delta_quantity,
+      notes: data.reason,
+    };
+    return this.adjustStock(adjustInput, userId, requestId);
   }
 
   async updateInventory(
     organizationId: string,
     id: string,
     data: { quantity?: string | number; reorder_level?: string | number },
+    userId?: string,
+    requestId?: string,
   ): Promise<Inventory> {
     await this.getInventoryById(organizationId, id);
     const updated = await inventoryRepository.update(organizationId, id, data);
+
+    await businessEventService.emit({
+      eventName: 'INVENTORY_UPDATED',
+      organization_id: organizationId,
+      user_id: userId,
+      request_id: requestId,
+      metadata: { inventory_id: id },
+    });
+
     return updated!;
+  }
+
+  async deleteInventory(
+    organizationId: string,
+    id: string,
+    userId?: string,
+    requestId?: string,
+  ): Promise<boolean> {
+    return withTransaction(async (tx) => {
+      const inv = await inventoryRepository.findById(organizationId, id, tx);
+      if (!inv) {
+        throw new InventoryNotFoundError(`Inventory item with ID ${id} not found`);
+      }
+
+      const deleted = await inventoryRepository.delete(organizationId, id, tx);
+
+      await auditService.recordAuditEvent(
+        {
+          organization_id: organizationId,
+          user_id: userId,
+          action: 'DELETE',
+          entity_type: 'INVENTORY',
+          entity_id: id,
+          request_id: requestId,
+          success: true,
+          metadata: { deleted: { product_id: inv.product_id, warehouse_id: inv.warehouse_id } },
+        },
+        tx,
+      );
+
+      await businessEventService.emit({
+        eventName: 'INVENTORY_DELETED',
+        organization_id: organizationId,
+        user_id: userId,
+        request_id: requestId,
+        metadata: { inventory_id: id },
+        client: tx,
+      });
+
+      return deleted;
+    });
+  }
+
+  async getMovements(
+    organizationId: string,
+    inventoryId: string,
+    params?: PaginationParams,
+  ): Promise<PaginatedResult<StockLedgerEntry>> {
+    const inv = await this.getInventoryById(organizationId, inventoryId);
+    return stockLedgerRepository.listByProductAndWarehouse(organizationId, inv.product_id, inv.warehouse_id, params);
   }
 }
 

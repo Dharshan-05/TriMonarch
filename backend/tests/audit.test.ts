@@ -133,7 +133,7 @@ describe('Audit Logging & Activity Tracking Subsystem', () => {
 
       expect(res.items.length).toBe(1);
       expect(res.items[0]!.action).toBe('LOGIN');
-      expect(auditRepository.listByOrganization).toHaveBeenCalledWith(orgAId, { action: 'LOGIN' });
+      expect(auditRepository.listByOrganization).toHaveBeenCalledWith(orgAId, { action: 'LOGIN' }, undefined);
     });
   });
 

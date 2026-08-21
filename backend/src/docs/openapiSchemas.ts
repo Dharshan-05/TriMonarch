@@ -1,0 +1,156 @@
+export const openapiSchemas = {
+  ApiMeta: {
+    type: 'object',
+    properties: {
+      requestId: { type: 'string', example: 'req-12345' },
+      apiVersion: { type: 'string', example: 'v1' },
+      timestamp: { type: 'string', format: 'date-time' },
+    },
+    required: ['requestId', 'apiVersion'],
+  },
+  PaginationMeta: {
+    type: 'object',
+    properties: {
+      page: { type: 'integer', example: 1 },
+      pageSize: { type: 'integer', example: 20 },
+      totalItems: { type: 'integer', example: 100 },
+      totalPages: { type: 'integer', example: 5 },
+      hasNextPage: { type: 'boolean', example: true },
+      hasPreviousPage: { type: 'boolean', example: false },
+    },
+    required: ['page', 'pageSize', 'totalItems', 'totalPages', 'hasNextPage', 'hasPreviousPage'],
+  },
+  ApiError: {
+    type: 'object',
+    properties: {
+      code: { type: 'string', example: 'VALIDATION_ERROR' },
+      message: { type: 'string', example: 'Request validation failed' },
+      details: { type: 'object', nullable: true },
+    },
+    required: ['code', 'message'],
+  },
+  ApiErrorResponse: {
+    type: 'object',
+    properties: {
+      success: { type: 'boolean', example: false },
+      error: { $ref: '#/components/schemas/ApiError' },
+      meta: { $ref: '#/components/schemas/ApiMeta' },
+    },
+    required: ['success', 'error'],
+  },
+  User: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      organization_id: { type: 'string', format: 'uuid' },
+      email: { type: 'string', format: 'email' },
+      first_name: { type: 'string' },
+      last_name: { type: 'string' },
+      role: { type: 'string', enum: ['super_admin', 'admin', 'manager', 'user', 'auditor'] },
+      is_active: { type: 'boolean' },
+      created_at: { type: 'string', format: 'date-time' },
+      updated_at: { type: 'string', format: 'date-time' },
+    },
+  },
+  Product: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      organization_id: { type: 'string', format: 'uuid' },
+      sku: { type: 'string' },
+      name: { type: 'string' },
+      description: { type: 'string', nullable: true },
+      unit_price: { type: 'string', example: '99.99' },
+      cost_price: { type: 'string', example: '49.99' },
+      is_active: { type: 'boolean' },
+      created_at: { type: 'string', format: 'date-time' },
+    },
+  },
+  Partner: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      organization_id: { type: 'string', format: 'uuid' },
+      name: { type: 'string' },
+      type: { type: 'string', enum: ['customer', 'supplier', 'both'] },
+      email: { type: 'string', format: 'email', nullable: true },
+      phone: { type: 'string', nullable: true },
+      is_active: { type: 'boolean' },
+    },
+  },
+  InventoryItem: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      organization_id: { type: 'string', format: 'uuid' },
+      product_id: { type: 'string', format: 'uuid' },
+      warehouse_id: { type: 'string', format: 'uuid' },
+      quantity_on_hand: { type: 'string', example: '100.00' },
+      quantity_allocated: { type: 'string', example: '10.00' },
+      quantity_available: { type: 'string', example: '90.00' },
+    },
+  },
+  SalesOrder: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      organization_id: { type: 'string', format: 'uuid' },
+      order_number: { type: 'string' },
+      customer_id: { type: 'string', format: 'uuid' },
+      status: { type: 'string', enum: ['draft', 'confirmed', 'processing', 'completed', 'cancelled'] },
+      total_amount: { type: 'string', example: '1500.00' },
+    },
+  },
+  PurchaseOrder: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      order_number: { type: 'string' },
+      supplier_id: { type: 'string', format: 'uuid' },
+      status: { type: 'string', enum: ['draft', 'submitted', 'received', 'completed', 'cancelled'] },
+      total_amount: { type: 'string', example: '2500.00' },
+    },
+  },
+  BOM: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      product_id: { type: 'string', format: 'uuid' },
+      bom_code: { type: 'string' },
+      name: { type: 'string' },
+      version: { type: 'string' },
+      is_active: { type: 'boolean' },
+    },
+  },
+  ManufacturingOrder: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      order_number: { type: 'string' },
+      bom_id: { type: 'string', format: 'uuid' },
+      status: { type: 'string', enum: ['planned', 'in_progress', 'completed', 'cancelled'] },
+      quantity_to_produce: { type: 'string', example: '50.00' },
+    },
+  },
+  AuditLog: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      organization_id: { type: 'string', format: 'uuid' },
+      user_id: { type: 'string', format: 'uuid', nullable: true },
+      action: { type: 'string' },
+      entity_type: { type: 'string' },
+      entity_id: { type: 'string' },
+      created_at: { type: 'string', format: 'date-time' },
+    },
+  },
+  BusinessEvent: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      event_type: { type: 'string' },
+      payload: { type: 'object' },
+      created_at: { type: 'string', format: 'date-time' },
+    },
+  },
+};

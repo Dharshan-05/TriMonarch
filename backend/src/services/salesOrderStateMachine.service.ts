@@ -142,6 +142,21 @@ export class SalesOrderStateMachineService {
         tx,
       );
 
+      const { businessEventService } = await import('./businessEvent.service');
+      let eventName: 'SALES_ORDER_CONFIRMED' | 'SALES_ORDER_CANCELLED' | 'SALES_ORDER_COMPLETED' | 'SALES_ORDER_UPDATED' = 'SALES_ORDER_UPDATED';
+      if (targetStatus === 'confirmed') eventName = 'SALES_ORDER_CONFIRMED';
+      else if (targetStatus === 'cancelled') eventName = 'SALES_ORDER_CANCELLED';
+      else if (targetStatus === 'completed') eventName = 'SALES_ORDER_COMPLETED';
+
+      await businessEventService.emit({
+        eventName,
+        organization_id: organizationId,
+        user_id: userId,
+        request_id: requestId,
+        metadata: { sales_order_id: salesOrderId, from_status: currentStatus, to_status: targetStatus },
+        client: tx,
+      });
+
       return updated;
     });
   }

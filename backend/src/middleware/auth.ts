@@ -1,11 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyAccessToken, AuthenticationError, InvalidTokenError } from '../utils/jwt';
+import { verifyAccessToken, InvalidTokenError } from '../utils/jwt';
+import { AuthenticationRequiredError } from '../errors/authentication.errors';
+import { AuthContext } from '../types/auth';
 
-export interface AuthContext {
-  userId: string;
-  organizationId: string;
-  jti: string;
-}
+export { AuthContext };
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -20,7 +18,7 @@ export const requireAuth = async (req: Request, _res: Response, next: NextFuncti
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
-      throw new AuthenticationError('Authorization header is required');
+      throw new AuthenticationRequiredError('Authorization header is required');
     }
 
     const parts = authHeader.split(' ');
@@ -30,6 +28,10 @@ export const requireAuth = async (req: Request, _res: Response, next: NextFuncti
 
     const token = parts[1];
     const decoded = await verifyAccessToken(token);
+
+    if (!decoded || !decoded.sub || !decoded.organizationId) {
+      throw new InvalidTokenError('Invalid token payload: missing sub or organizationId');
+    }
 
     req.auth = {
       userId: decoded.sub,

@@ -19,8 +19,8 @@ describe('REST API Foundation & Endpoints (/api/v1)', () => {
   it('GET /api/v1/docs should return OpenAPI specification', async () => {
     const response = await request(app).get('/api/v1/docs');
     expect(response.status).toBe(200);
-    expect(response.body.openapi).toBe('3.0.3');
-    expect(response.body.info.title).toContain('ERP Backend Service API');
+    expect(response.body.openapi).toBe('3.1.0');
+    expect(response.body.info.title).toContain('TriMonarch ERP API');
   });
 
   describe('Organizations API (/api/v1/organizations)', () => {

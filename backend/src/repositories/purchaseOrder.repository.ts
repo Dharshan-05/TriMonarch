@@ -15,6 +15,7 @@ import { formatLikeSearch } from './base/repository.utils';
 export interface PurchaseOrderFilterParams extends BaseFilterParams {
   query?: string;
   supplierId?: string;
+  warehouseId?: string;
   status?: string;
   orderDate?: Date | string;
   expectedDeliveryDate?: Date | string;
@@ -42,14 +43,15 @@ export class PurchaseOrderRepository extends BaseRepository<
   async create(data: CreatePurchaseOrderInput, client?: PoolClient): Promise<PurchaseOrder> {
     const rows = await query<PurchaseOrder>(
       `INSERT INTO purchase_orders (
-         organization_id, supplier_id, order_number, order_date, expected_delivery_date, status,
+         organization_id, supplier_id, warehouse_id, order_number, order_date, expected_delivery_date, status,
          currency, subtotal, tax_amount, discount_amount, total_amount, notes
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *;`,
       [
         data.organization_id,
         data.supplier_id,
+        data.warehouse_id || null,
         data.order_number,
         data.order_date || new Date(),
         data.expected_delivery_date || null,
@@ -69,6 +71,18 @@ export class PurchaseOrderRepository extends BaseRepository<
   async findById(organizationId: string, id: string, client?: PoolClient): Promise<PurchaseOrder | null> {
     return queryOne<PurchaseOrder>(
       'SELECT * FROM purchase_orders WHERE id = $1 AND organization_id = $2;',
+      [id, organizationId],
+      client,
+    );
+  }
+
+  async lockByIdForUpdate(
+    organizationId: string,
+    id: string,
+    client?: PoolClient,
+  ): Promise<PurchaseOrder | null> {
+    return queryOne<PurchaseOrder>(
+      'SELECT * FROM purchase_orders WHERE id = $1 AND organization_id = $2 FOR UPDATE;',
       [id, organizationId],
       client,
     );
@@ -111,6 +125,14 @@ export class PurchaseOrderRepository extends BaseRepository<
     if (data.supplier_id !== undefined) {
       fields.push(`supplier_id = $${idx++}`);
       values.push(data.supplier_id);
+    }
+    if (data.warehouse_id !== undefined) {
+      fields.push(`warehouse_id = $${idx++}`);
+      values.push(data.warehouse_id);
+    }
+    if (data.order_number !== undefined) {
+      fields.push(`order_number = $${idx++}`);
+      values.push(data.order_number);
     }
     if (data.order_date !== undefined) {
       fields.push(`order_date = $${idx++}`);

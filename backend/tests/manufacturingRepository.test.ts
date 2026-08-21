@@ -21,7 +21,9 @@ describe('Manufacturing Repository Subsystem (Phase 016)', () => {
     organization_id: orgAId,
     bom_id: bomId,
     product_id: finishedProductId,
+    warehouse_id: 'wh-1111',
     order_number: 'MO-2026-0001',
+    mo_number: 'MO-2026-0001',
     planned_quantity: '100.2500',
     completed_quantity: '0.0001',
     scheduled_start_date: new Date(),
@@ -50,7 +52,7 @@ describe('Manufacturing Repository Subsystem (Phase 016)', () => {
 
   const mockQueryFn = async (sql: string, params?: unknown[]) => {
     if (sql.includes('INSERT INTO manufacturing_orders')) {
-      const orderNum = params?.[3] as string;
+      const orderNum = (params?.[4] || params?.[3]) as string;
       const bId = params?.[1] as string;
       if (orderNum === 'MO-DUPLICATE') {
         throw handleDatabaseError({
@@ -71,7 +73,7 @@ describe('Manufacturing Repository Subsystem (Phase 016)', () => {
     if (sql.includes('INSERT INTO manufacturing_order_items')) {
       const reqQty = params?.[4] as string;
       const compId = params?.[2] as string;
-      if (reqQty.startsWith('-')) {
+      if (reqQty && reqQty.startsWith('-')) {
         throw handleDatabaseError({
           code: '23514',
           detail: 'Failing row contains negative quantity',
@@ -108,7 +110,7 @@ describe('Manufacturing Repository Subsystem (Phase 016)', () => {
       }
       return { rows: [], rowCount: 0, command: '', oid: 0, fields: [] };
     }
-    if (sql.includes('SELECT') && sql.includes('FROM manufacturing_orders WHERE order_number = $1 AND organization_id = $2')) {
+    if (sql.includes('SELECT') && sql.includes('order_number = $1')) {
       const [num, orgId] = params as [string, string];
       if (num === 'MO-2026-0001' && orgId === orgAId) {
         return { rows: [mockManufacturingOrder], rowCount: 1, command: '', oid: 0, fields: [] };

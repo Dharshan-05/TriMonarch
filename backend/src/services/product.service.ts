@@ -7,6 +7,7 @@ import { withTransaction } from '../db/transaction';
 import { auditService } from '../audit/audit.service';
 import { computeDiff } from '../audit/audit.utils';
 import { createProductSchema, updateProductSchema } from '../schemas/product.schema';
+import { businessEventService } from './businessEvent.service';
 
 export class ProductService {
   async createProduct(data: CreateProductInput, userId?: string, requestId?: string): Promise<Product> {
@@ -55,6 +56,15 @@ export class ProductService {
         },
         tx,
       );
+
+      await businessEventService.emit({
+        eventName: 'PRODUCT_CREATED',
+        organization_id: organizationId,
+        user_id: userId,
+        request_id: requestId,
+        metadata: { sku: prod.sku, name: prod.name },
+        client: tx,
+      });
 
       return prod;
     });
@@ -151,10 +161,33 @@ export class ProductService {
           },
           tx,
         );
+
+        const eventName = validated.status && Object.keys(diff).length === 1 && diff.status
+          ? 'PRODUCT_STATUS_CHANGED'
+          : 'PRODUCT_UPDATED';
+
+        await businessEventService.emit({
+          eventName,
+          organization_id: organizationId,
+          user_id: userId,
+          request_id: requestId,
+          metadata: { changes: diff },
+          client: tx,
+        });
       }
 
       return updated;
     });
+  }
+
+  async updateProductStatus(
+    organizationId: string,
+    id: string,
+    status: 'active' | 'inactive' | 'discontinued',
+    userId?: string,
+    requestId?: string,
+  ): Promise<Product> {
+    return this.updateProduct(organizationId, id, { status }, userId, requestId);
   }
 
   async deleteProduct(
@@ -184,6 +217,15 @@ export class ProductService {
         },
         tx,
       );
+
+      await businessEventService.emit({
+        eventName: 'PRODUCT_DELETED',
+        organization_id: organizationId,
+        user_id: userId,
+        request_id: requestId,
+        metadata: { sku: existing.sku, name: existing.name },
+        client: tx,
+      });
 
       return deleted;
     });

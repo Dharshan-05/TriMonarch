@@ -32,7 +32,7 @@ describe('Audit Log Repository Subsystem (Phase 018)', () => {
 
   const mockQueryFn = async (sql: string, params?: unknown[]) => {
     if (sql.includes('INSERT INTO audit_logs')) {
-      const metadataStr = params?.[7] as string;
+      const metadataStr = (params && params.length ? params[params.length - 1] : '{}') as string;
       const parsedMetadata = JSON.parse(metadataStr);
       return {
         rows: [

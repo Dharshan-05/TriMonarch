@@ -10,6 +10,10 @@ export const salesOrderStatusSchema = z.enum([
   'cancelled',
 ]);
 
+export const salesOrderStatusUpdateSchema = z.object({
+  status: salesOrderStatusSchema,
+});
+
 export const createSalesOrderItemSchema = z.object({
   organization_id: z.string().uuid().optional(),
   sales_order_id: z.string().uuid().optional(),
@@ -71,4 +75,18 @@ export const updateSalesOrderSchema = z.object({
   discount_amount: moneySchema.optional(),
   total_amount: moneySchema.optional(),
   notes: z.string().nullable().optional(),
+});
+
+export const salesOrderQuerySchema = z.object({
+  page: z.string().optional(),
+  pageSize: z.string().optional(),
+  sortBy: z.string().optional(),
+  sortOrder: z.enum(['asc', 'desc']).optional(),
+  search: z.string().optional(),
+  query: z.string().optional(),
+  customerId: z.string().uuid().optional(),
+  customer_id: z.string().uuid().optional(),
+  status: salesOrderStatusSchema.optional(),
+  orderDate: z.string().optional(),
+  order_date: z.string().optional(),
 });

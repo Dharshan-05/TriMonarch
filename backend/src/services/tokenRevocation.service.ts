@@ -17,8 +17,21 @@ export class TokenRevocationService {
     );
   }
 
-  async isTokenRevoked(jti: string, client?: PoolClient): Promise<boolean> {
+  async revokeAllUserTokens(userId: string, client?: PoolClient): Promise<void> {
+    const expiresAt = new Date(Date.now() + 30 * 86400 * 1000);
+    await this.revokeToken(`ALL_SESSIONS_${userId}`, userId, expiresAt, client);
+  }
+
+  async isTokenRevoked(jti: string, userId?: string, client?: PoolClient): Promise<boolean> {
     try {
+      if (userId) {
+        const allSessions = await queryOne<{ jti: string }>(
+          'SELECT jti FROM auth_token_revocations WHERE jti = $1;',
+          [`ALL_SESSIONS_${userId}`],
+          client,
+        );
+        if (allSessions) return true;
+      }
       const row = await queryOne<{ jti: string }>(
         'SELECT jti FROM auth_token_revocations WHERE jti = $1;',
         [jti],

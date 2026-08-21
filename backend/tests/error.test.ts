@@ -7,12 +7,8 @@ describe('Error Handling Middleware', () => {
     const response = await request(app).get('/api/unknown-endpoint-123');
 
     expect(response.status).toBe(404);
-    expect(response.body).toEqual({
-      success: false,
-      error: {
-        code: 'NOT_FOUND',
-        message: 'Route GET /api/unknown-endpoint-123 not found',
-      },
-    });
+    expect(response.body.success).toBe(false);
+    expect(response.body.error.code).toBe('NOT_FOUND');
+    expect(response.body.error.message).toBe('Route GET /api/unknown-endpoint-123 not found');
   });
 });

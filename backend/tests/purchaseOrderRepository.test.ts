@@ -51,7 +51,7 @@ describe('Purchase Order Repository Subsystem (Phase 015)', () => {
 
   const mockQueryFn = async (sql: string, params?: unknown[]) => {
     if (sql.includes('INSERT INTO purchase_orders')) {
-      const orderNum = params?.[2] as string;
+      const orderNum = (params?.[3] || params?.[2]) as string;
       const suppId = params?.[1] as string;
       if (orderNum === 'PO-DUPLICATE') {
         throw handleDatabaseError({

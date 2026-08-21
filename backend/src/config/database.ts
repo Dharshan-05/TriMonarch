@@ -5,17 +5,27 @@ import { logger } from '../utils/logger';
 // Enforce PostgreSQL NUMERIC / DECIMAL (OID 1700) to return exact string representation
 types.setTypeParser(1700, (val: string) => val);
 
-export const pool = new Pool({
-  host: env.DATABASE_HOST,
-  port: env.DATABASE_PORT,
-  database: env.DATABASE_NAME,
-  user: env.DATABASE_USER,
-  password: env.DATABASE_PASSWORD,
-  ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : false,
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+const poolConfig = env.DATABASE_URL
+  ? {
+      connectionString: env.DATABASE_URL,
+      ssl: env.DATABASE_SSL || env.DATABASE_URL.includes('supabase') ? { rejectUnauthorized: false } : false,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    }
+  : {
+      host: env.DATABASE_HOST,
+      port: env.DATABASE_PORT,
+      database: env.DATABASE_NAME,
+      user: env.DATABASE_USER,
+      password: env.DATABASE_PASSWORD,
+      ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : false,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    };
+
+export const pool = new Pool(poolConfig);
 
 pool.on('error', (err) => {
   logger.error({ err }, 'Unexpected error on idle database client');

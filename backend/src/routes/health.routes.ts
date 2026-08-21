@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { testDatabaseConnection } from '../config/database';
+import { testDatabaseConnection, pool } from '../config/database';
 import { HealthCheckResponse } from '../types';
 
 const router = Router();
@@ -24,6 +24,31 @@ router.get('/health', async (_req: Request, res: Response, next: NextFunction) =
     res.status(200).json(response);
   } catch (error) {
     next(error);
+  }
+});
+
+router.get('/ready', async (_req: Request, res: Response) => {
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query('SELECT 1;');
+      res.status(200).json({
+        success: true,
+        status: 'ready',
+        service: 'erp-backend',
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      client.release();
+    }
+  } catch {
+    res.status(503).json({
+      success: false,
+      status: 'not_ready',
+      service: 'erp-backend',
+      timestamp: new Date().toISOString(),
+      error: 'Database connection check failed',
+    });
   }
 });
 
